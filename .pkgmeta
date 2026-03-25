@@ -1,0 +1,22 @@
+package-as: BetterBags-GearCategories
+
+move-folders:
+ BetterBags-GearCategories/BetterBags-GearCategories: BetterBags-GearCategories
+
+manual-changelog:
+  filename: CHANGELOG.md
+  markup-type: markdown
+changelog-title: BetterBags-GearCategories
+
+ignore:
+  - .github/**
+  - README.md
+  - LICENSE.md
+  - CHANGELOG.md
+  - RELEASE_NOTES.md
+  - update.py
+  - make_release.sh
+  - .gitignore
+  - release.sh
+  - IMAGES.md
+  - images/**

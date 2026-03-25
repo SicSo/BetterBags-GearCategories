@@ -1,0 +1,19 @@
+## Interface: 120000,120001
+
+## Title: BetterBags - Gear Categories
+## Notes: Adds categories for classifing gear by tracks or season to BetterBags.
+## Author: Sicso
+## Version: 0.1.0
+## IconTexture: Interface/AddOns/BetterBags-GearCategories/gfx/icon.tga
+## X-Website: https://github.com/SicSo/BetterBags-GearCategories
+## SavedVariables: BBGT_DB
+## DefaultState: Enabled
+## Dependencies: BetterBags
+## X-Category: Bags & Inventory
+## X-License: MIT
+## X-Curse-Project-ID: 1494938
+## X-Wago-ID: x618a2N1
+
+Core.lua
+Backend/Init.xml
+UI.lua
