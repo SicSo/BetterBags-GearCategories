@@ -1,4 +1,4 @@
--- Backend.lua
+-- main.lua
 
 BBTC = BBTC or {}
 BBTC.UIOptions = BBTC.UIOptions or {}
@@ -6,12 +6,11 @@ BBTC.UIOptions = BBTC.UIOptions or {}
 local UIOptions = BBTC.UIOptions
 
 local addon = BBTC.addon
-local database = addon and addon:GetModule('Database')
-local const = addon and addon:GetModule('Constants')
+local database = addon and addon:GetModule("Database")
+local const = addon and addon:GetModule("Constants")
 
 local categories = BBTC.categories
 local events = BBTC.events
-local L = BBTC.L
 local AceDB = BBTC.AceDB
 local AceConfigRegistry = BBTC.AceConfigRegistry
 local mycontext = BBTC.mycontext
@@ -22,21 +21,37 @@ local defaults = BBTC.defaults
 local DEFAULT_PROFILE_NAME = "Default"
 local restoreStarted = false
 local categoriesReady = false
+local orderingHookRegistered = false
+local isApplyingManagedOrder = false
 
 local EXPANSION_MIDNIGHT = "midnight"
 local SEASON_1 = "s1"
 local CRAFTED_GROUP = "crafted"
 
+-- Visible order:
+-- 1 Myth
+-- 2 Hero
+-- 3 Champion
+-- 4 Veteran
+-- 5 Adventurer
+-- 6 Season 1
+-- 7 S1 Crafted
+-- 8 Crafted
 local CATEGORY_ORDER = {
-  "crafted",
-  "season",
-  "adv",
-  "vet",
-  "champ",
-  "hero",
   "myth",
+  "hero",
+  "champ",
+  "vet",
+  "adv",
+  "season",
   "s1craft",
+  "crafted",
 }
+
+local CATEGORY_INDEX = {}
+for index, key in ipairs(CATEGORY_ORDER) do
+  CATEGORY_INDEX[key] = index
+end
 
 local CATEGORY_PATHS = {
   season  = { expansion = EXPANSION_MIDNIGHT, season = SEASON_1, category = "season"  },
@@ -120,8 +135,61 @@ local function RefreshBags()
   end
 end
 
+local function GetGlobalSettingsTable(db)
+  db.profile = db.profile or {}
+  db.profile.settings = db.profile.settings or {}
+
+  local settings = db.profile.settings
+
+  if settings.enforceOrderOnCreate == nil then
+    settings.enforceOrderOnCreate = true
+  else
+    settings.enforceOrderOnCreate = not not settings.enforceOrderOnCreate
+  end
+
+  if settings.enforceOrderAlways == nil then
+    settings.enforceOrderAlways = false
+  else
+    settings.enforceOrderAlways = not not settings.enforceOrderAlways
+  end
+
+  return settings
+end
+
+local function GetSettings()
+  local db = EnsureDB()
+  return GetGlobalSettingsTable(db)
+end
+
+local function GetMaxManagedOrder()
+  return #CATEGORY_ORDER
+end
+
+local function GetDefaultSectionOrder(key)
+  local def = GetTypeDef(key)
+  return (def and def.defaultSectionOrder) or CATEGORY_INDEX[key] or GetMaxManagedOrder()
+end
+
+local function NormalizeSectionOrder(key, value)
+  local fallback = GetDefaultSectionOrder(key)
+  local n = tonumber(value)
+  if not n then
+    return fallback
+  end
+
+  n = math.floor(n)
+
+  if n < 1 then
+    n = 1
+  elseif n > GetMaxManagedOrder() then
+    n = GetMaxManagedOrder()
+  end
+
+  return n
+end
+
 local function GetNextPinnedIndex(pinnedList)
-  local nextIndex = 1
+  local nextIndex = 0
 
   for _, index in pairs(pinnedList or {}) do
     if type(index) == "number" and index >= nextIndex then
@@ -208,6 +276,10 @@ local function EnsureCategoryStateShape(key, state)
     state.activePriority = NormalizePriority(key, state.activePriority)
   end
 
+  if state.activeOrder ~= nil then
+    state.activeOrder = NormalizeSectionOrder(key, state.activeOrder)
+  end
+
   if state.activeIncludeBoe == nil then
     state.activeIncludeBoe = nil
   else
@@ -233,6 +305,12 @@ local function EnsureCategoryStateShape(key, state)
     state.pendingPriority = def.defaultPriority
   else
     state.pendingPriority = NormalizePriority(key, state.pendingPriority)
+  end
+
+  if state.pendingOrder == nil then
+    state.pendingOrder = GetDefaultSectionOrder(key)
+  else
+    state.pendingOrder = NormalizeSectionOrder(key, state.pendingOrder)
   end
 
   if state.pendingIncludeBoe == nil then
@@ -325,6 +403,7 @@ end
 local function GetState(key)
   local db = EnsureDB()
   MigrateLegacyCategories(db)
+  GetGlobalSettingsTable(db)
 
   local state = GetCategoryStateTable(db, key)
   if not state then
@@ -332,17 +411,6 @@ local function GetState(key)
   end
 
   return EnsureCategoryStateShape(key, state)
-end
-
-local function SetPinnedEnabled(key, value)
-  local state = GetState(key)
-  state.pinned = not not value
-
-  if state.activeName then
-    SetCategoryPinnedByName(state.activeName, state.pinned)
-  end
-
-  NotifyConfigChanged()
 end
 
 local function NormalizeName(key, value)
@@ -414,10 +482,21 @@ local function GetPendingPriority(key)
   return NormalizePriority(key, state.pendingPriority)
 end
 
+local function GetPendingOrder(key)
+  local state = GetState(key)
+  return NormalizeSectionOrder(key, state.pendingOrder)
+end
+
 local function ResetPendingPriority(key)
   local state = GetState(key)
   local def = GetTypeDef(key)
   state.pendingPriority = def.defaultPriority
+  NotifyConfigChanged()
+end
+
+local function ResetPendingOrder(key)
+  local state = GetState(key)
+  state.pendingOrder = GetDefaultSectionOrder(key)
   NotifyConfigChanged()
 end
 
@@ -632,6 +711,124 @@ local function DeleteManagedCategory(key, plainName, query)
   return false
 end
 
+local function ClearCustomSectionSort(kind)
+  if not database or not kind then
+    return
+  end
+
+  if database.ClearCustomSectionSort then
+    database:ClearCustomSectionSort(kind)
+    return
+  end
+
+  local current = database:GetCustomSectionSort(kind)
+  if type(current) == "table" then
+    for name in pairs(current) do
+      current[name] = nil
+    end
+  end
+end
+
+local function BuildManagedPinnedEntries()
+  local entries = {}
+
+  for _, key in ipairs(CATEGORY_ORDER) do
+    local state = GetState(key)
+    if state.active and state.pinned and state.activeName and state.activeName ~= "" then
+      entries[#entries + 1] = {
+        key = key,
+        name = state.activeName,
+        order = NormalizeSectionOrder(key, state.activeOrder or state.pendingOrder or GetDefaultSectionOrder(key)),
+        fallback = CATEGORY_INDEX[key] or 999,
+      }
+    end
+  end
+
+  table.sort(entries, function(a, b)
+    if a.order ~= b.order then
+      return a.order < b.order
+    end
+
+    if a.fallback ~= b.fallback then
+      return a.fallback < b.fallback
+    end
+
+    return tostring(a.name) < tostring(b.name)
+  end)
+
+  return entries
+end
+
+local function ApplyManagedCategoryOrder(skipRefresh)
+  if isApplyingManagedOrder then
+    return
+  end
+
+  if not database or not const then
+    return
+  end
+
+  isApplyingManagedOrder = true
+
+  local bagKinds = {
+    const.BAG_KIND.BACKPACK,
+    const.BAG_KIND.BANK,
+  }
+
+  local managedEntries = BuildManagedPinnedEntries()
+  local managedNames = {}
+
+  for _, entry in ipairs(managedEntries) do
+    managedNames[entry.name] = true
+
+    local stripped = UIOptions:StripColourCodes(entry.name)
+    if stripped ~= entry.name then
+      managedNames[stripped] = true
+    end
+  end
+
+  for _, kind in ipairs(bagKinds) do
+    local current = database:GetCustomSectionSort(kind) or {}
+    local foreign = {}
+
+    for name, index in pairs(current) do
+      if not managedNames[name] then
+        foreign[#foreign + 1] = {
+          name = name,
+          index = tonumber(index) or 999999,
+        }
+      end
+    end
+
+    table.sort(foreign, function(a, b)
+      if a.index ~= b.index then
+        return a.index < b.index
+      end
+      return tostring(a.name) < tostring(b.name)
+    end)
+
+    ClearCustomSectionSort(kind)
+
+    local nextIndex = 0
+
+    for _, entry in ipairs(managedEntries) do
+      database:SetCustomSectionSort(kind, entry.name, nextIndex)
+      nextIndex = nextIndex + 1
+    end
+
+    for _, entry in ipairs(foreign) do
+      database:SetCustomSectionSort(kind, entry.name, nextIndex)
+      nextIndex = nextIndex + 1
+    end
+  end
+
+  if not skipRefresh then
+    RefreshBags()
+  end
+
+  isApplyingManagedOrder = false
+end
+
 local function SyncStateFromExistingCategories()
   if not UpdateCategoriesReadyState() then
     return
@@ -659,6 +856,7 @@ local function SyncStateFromExistingCategories()
 
           local def = GetTypeDef(key)
           state.activeColor = NormalizeColor(state.pendingColor, def.defaultColor)
+          state.activeOrder = NormalizeSectionOrder(key, state.pendingOrder or def.defaultSectionOrder)
           state.activeIncludeBoe = not not state.pendingIncludeBoe
           state.activeIncludeBow = not not state.pendingIncludeBow
         end
@@ -671,6 +869,7 @@ local function SyncStateFromExistingCategories()
         state.plainActiveName = nil
         state.activeColor = nil
         state.activePriority = nil
+        state.activeOrder = nil
         state.activeIncludeBoe = nil
         state.activeIncludeBow = nil
       end
@@ -695,6 +894,7 @@ local function EnsureCategoryMatchesState(key)
   local plainName = NormalizeName(key, state.plainActiveName or state.pendingName)
   local color = NormalizeColor(state.activeColor or state.pendingColor, def.defaultColor)
   local priority = NormalizePriority(key, state.activePriority or state.pendingPriority or def.defaultPriority)
+  local order = NormalizeSectionOrder(key, state.activeOrder or state.pendingOrder or def.defaultSectionOrder)
   local expectedName = GetCategoryName(key, plainName, color)
   local query = GetQueryForKey(key)
 
@@ -705,6 +905,7 @@ local function EnsureCategoryMatchesState(key)
   state.plainActiveName = plainName
   state.activeColor = UIOptions:CopyColour(color)
   state.activePriority = priority
+  state.activeOrder = order
   state.activeIncludeBoe = not not state.pendingIncludeBoe
   state.activeIncludeBow = not not state.pendingIncludeBow
 
@@ -717,7 +918,7 @@ local function EnsureCategoryMatchesState(key)
       state.activePriority = NormalizePriority(key, foundData.priority)
     end
 
-    SetCategoryPinnedByName(state.activeName, state.pinned)
+    SetCategoryPinnedByName(state.activeName, state.pinned, true)
     return
   end
 
@@ -744,12 +945,49 @@ local function RestoreActiveCategories()
     end
   end
 
+  local settings = GetSettings()
+  if settings.enforceOrderOnCreate or settings.enforceOrderAlways then
+    ApplyManagedCategoryOrder()
+  end
+
   NotifyConfigChanged()
+end
+
+local function RegisterOrderingHook()
+  if orderingHookRegistered then
+    return
+  end
+
+  if not events or type(events.RegisterMessage) ~= "function" then
+    return
+  end
+
+  local function handler()
+    local settings = GetSettings()
+    if settings.enforceOrderAlways then
+      ApplyManagedCategoryOrder()
+    end
+  end
+
+  local ok = pcall(function()
+    events:RegisterMessage("categories/Changed", handler)
+  end)
+
+  if not ok and mycontext then
+    ok = pcall(function()
+      events:RegisterMessage(mycontext, "categories/Changed", handler)
+    end)
+  end
+
+  if ok then
+    orderingHookRegistered = true
+  end
 end
 
 local function RestoreWhenReady(attempt)
   attempt = attempt or 1
   EnsureDB()
+  RegisterOrderingHook()
 
   if UpdateCategoriesReadyState() then
     SyncStateFromExistingCategories()
@@ -769,15 +1007,19 @@ end
 local function ActivateCategory(key)
   local def = GetTypeDef(key)
   local state = GetState(key)
+  local settings = GetSettings()
+
   local newPlainName = NormalizeName(key, state.pendingName)
   local newColor = UIOptions:CopyColour(GetPendingColor(key))
   local newPriority = GetPendingPriority(key)
+  local newOrder = GetPendingOrder(key)
   local newCategoryName = GetCategoryName(key, newPlainName, newColor)
   local query = GetQueryForKey(key)
 
   state.pendingName = newPlainName
   state.pendingColor = UIOptions:CopyColour(newColor)
   state.pendingPriority = newPriority
+  state.pendingOrder = newOrder
 
   if not query or query == "" then
     print("BetterBags_GearCategories: No query available for " .. tostring(key))
@@ -791,9 +1033,15 @@ local function ActivateCategory(key)
     state.plainActiveName = newPlainName
     state.activeColor = NormalizeColor(newColor, def.defaultColor)
     state.activePriority = newPriority
+    state.activeOrder = newOrder
     state.activeIncludeBoe = not not state.pendingIncludeBoe
     state.activeIncludeBow = not not state.pendingIncludeBow
     SetCategoryPinnedByName(state.activeName, state.pinned, true)
+
+    if state.pinned and (settings.enforceOrderOnCreate or settings.enforceOrderAlways) then
+      ApplyManagedCategoryOrder(true)
+    end
+
     NotifyConfigChanged()
     return
   end
@@ -806,9 +1054,14 @@ local function ActivateCategory(key)
   state.plainActiveName = newPlainName
   state.activeColor = NormalizeColor(newColor, def.defaultColor)
   state.activePriority = newPriority
+  state.activeOrder = newOrder
   state.activeIncludeBoe = not not state.pendingIncludeBoe
   state.activeIncludeBow = not not state.pendingIncludeBow
   SetCategoryPinnedByName(state.activeName, state.pinned, true)
+
+  if state.pinned and (settings.enforceOrderOnCreate or settings.enforceOrderAlways) then
+    ApplyManagedCategoryOrder()
+  end
 
   NotifyConfigChanged()
 end
@@ -835,8 +1088,48 @@ local function SetIncludeBowEnabled(key, value)
   end
 end
 
+local function SetPinnedEnabled(key, value)
+  local state = GetState(key)
+  local settings = GetSettings()
+
+  state.pinned = not not value
+
+  if state.activeName then
+    SetCategoryPinnedByName(state.activeName, state.pinned, true)
+  end
+
+  if state.pinned and state.active then
+    state.activeOrder = GetPendingOrder(key)
+  end
+
+  if settings.enforceOrderOnCreate or settings.enforceOrderAlways then
+    ApplyManagedCategoryOrder()
+  else
+    RefreshBags()
+  end
+
+  NotifyConfigChanged()
+end
+
+local function ApplyPendingOrder(key)
+  local state = GetState(key)
+  state.pendingOrder = GetPendingOrder(key)
+
+  if state.active then
+    state.activeOrder = state.pendingOrder
+  end
+
+  local settings = GetSettings()
+  if state.pinned and state.active and (settings.enforceOrderOnCreate or settings.enforceOrderAlways) then
+    ApplyManagedCategoryOrder()
+  else
+    NotifyConfigChanged()
+  end
+end
+
 local function DeactivateCategory(key)
   local state = GetState(key)
+  local settings = GetSettings()
   local plainName = NormalizeName(key, state.plainActiveName or state.pendingName)
   local query = GetQueryForKey(key)
 
@@ -849,15 +1142,22 @@ local function DeactivateCategory(key)
   end
 
   if state.activeName then
-    SetCategoryPinnedByName(state.activeName, false)
+    SetCategoryPinnedByName(state.activeName, false, true)
   end
 
   state.activeName = nil
   state.plainActiveName = nil
   state.activeColor = nil
   state.activePriority = nil
+  state.activeOrder = nil
   state.activeIncludeBoe = nil
   state.activeIncludeBow = nil
+
+  if settings.enforceOrderOnCreate or settings.enforceOrderAlways then
+    ApplyManagedCategoryOrder()
+  else
+    RefreshBags()
+  end
 
   NotifyConfigChanged()
 end
@@ -884,6 +1184,29 @@ local function ResetPendingColor(key)
   NotifyConfigChanged()
 end
 
+local function SetEnforceOrderOnCreate(value)
+  local settings = GetSettings()
+  settings.enforceOrderOnCreate = not not value
+
+  if settings.enforceOrderOnCreate then
+    ApplyManagedCategoryOrder()
+  else
+    NotifyConfigChanged()
+  end
+end
+
+local function SetEnforceOrderAlways(value)
+  local settings = GetSettings()
+  settings.enforceOrderAlways = not not value
+
+  if settings.enforceOrderAlways then
+    RegisterOrderingHook()
+    ApplyManagedCategoryOrder()
+  else
+    NotifyConfigChanged()
+  end
+end
+
 local function GetStatusText(key)
   local state = GetState(key)
   local def = GetTypeDef(key)
@@ -905,6 +1228,12 @@ local function GetStatusText(key)
     local pendingPriority = GetPendingPriority(key)
     local activePriority = NormalizePriority(key, state.activePriority or def.defaultPriority)
     if pendingPriority ~= activePriority then
+      return "Status: " .. UIOptions:ColourTextHex("Active (pending changes)", UIOptions.turquoise)
+    end
+
+    local pendingOrder = GetPendingOrder(key)
+    local activeOrder = NormalizeSectionOrder(key, state.activeOrder or GetDefaultSectionOrder(key))
+    if pendingOrder ~= activeOrder then
       return "Status: " .. UIOptions:ColourTextHex("Active (pending changes)", UIOptions.turquoise)
     end
 
@@ -934,6 +1263,7 @@ BBTC.EnsureDB = EnsureDB
 BBTC.NotifyConfigChanged = NotifyConfigChanged
 BBTC.RefreshBags = RefreshBags
 BBTC.GetState = GetState
+BBTC.GetSettings = GetSettings
 BBTC.NormalizeName = NormalizeName
 BBTC.GetPendingColor = GetPendingColor
 BBTC.GetCategoryName = GetCategoryName
@@ -941,7 +1271,11 @@ BBTC.BuildSeasonQuery = BuildSeasonQuery
 BBTC.GetQueryForKey = GetQueryForKey
 BBTC.NormalizePriority = NormalizePriority
 BBTC.GetPendingPriority = GetPendingPriority
+BBTC.GetPendingOrder = GetPendingOrder
+BBTC.GetDefaultSectionOrder = GetDefaultSectionOrder
+BBTC.NormalizeSectionOrder = NormalizeSectionOrder
 BBTC.ResetPendingPriority = ResetPendingPriority
+BBTC.ResetPendingOrder = ResetPendingOrder
 BBTC.ResetPendingIncludeBoe = ResetPendingIncludeBoe
 BBTC.ResetPendingIncludeBow = ResetPendingIncludeBow
 BBTC.CreateCategory = CreateCategory
@@ -964,6 +1298,11 @@ BBTC.SetPinnedEnabled = SetPinnedEnabled
 BBTC.SetIncludeBoeEnabled = SetIncludeBoeEnabled
 BBTC.SetIncludeBowEnabled = SetIncludeBowEnabled
 BBTC.GetTypeDef = GetTypeDef
+BBTC.ApplyManagedCategoryOrder = ApplyManagedCategoryOrder
+BBTC.ApplyPendingOrder = ApplyPendingOrder
+BBTC.SetEnforceOrderOnCreate = SetEnforceOrderOnCreate
+BBTC.SetEnforceOrderAlways = SetEnforceOrderAlways
+BBTC.GetMaxManagedOrder = GetMaxManagedOrder
 
 local restoreFrame = CreateFrame("Frame")
 restoreFrame:RegisterEvent("PLAYER_LOGIN")

@@ -23,10 +23,10 @@ jobs:
           CF_API_KEY: ${{ secrets.CF_API_KEY }}
           WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}
 
-      - name: Zip UltimateCastbars folder (extra asset)
+      - name: Zip BetterBags-GearCategories folder (extra asset)
         run: |
           mkdir -p dist
-          zip -r "dist/UltimateCastbars-${GITHUB_REF_NAME}.zip" UltimateCastbars
+          zip -r "dist/BetterBags-GearCategories-${GITHUB_REF_NAME}.zip" BetterBags-GearCategories
 
       - name: Create GitHub Release (use RELEASE_NOTES.md)
         uses: softprops/action-gh-release@v2
@@ -36,5 +36,5 @@ jobs:
           body_path: RELEASE_NOTES.md
           # .release/*.zip in files MAYBE
           files: |
-            dist/UltimateCastbars-${{ github.ref_name }}.zip
+            dist/BetterBags-GearCategories-${{ github.ref_name }}.zip
           fail_on_unmatched_files: false

@@ -1,4 +1,4 @@
--- Defaults.lua
+-- default.lua
 
 BBTC = BBTC or {}
 BBTC.UIOptions = BBTC.UIOptions or {}
@@ -52,6 +52,19 @@ local DEFAULT_TYPE_COLORS = {
   s1craft = UIOptions.COLOR_RARE,
 }
 
+local DEFAULT_SECTION_ORDERS = {
+  myth = 1,
+  hero = 2,
+  champ = 3,
+  vet = 4,
+  adv = 5,
+  season = 6,
+  s1craft = 7,
+  crafted = 8,
+}
+
+local DEFAULT_PRIORITY = 5
+
 -- ============================================================================
 -- DATABASE KEYS
 -- ============================================================================
@@ -63,9 +76,6 @@ local CRAFTED_GROUP = "crafted"
 -- ============================================================================
 -- TYPE DEFINITIONS
 -- ============================================================================
--- Structure:
--- BBTC.TYPE_DEFS[expansionKey].seasons[seasonKey].categories[categoryKey]
--- BBTC.TYPE_DEFS[expansionKey].crafted.categories[categoryKey]
 
 local TYPE_DEFS = {
   [EXPANSION_MIDNIGHT] = {
@@ -81,7 +91,8 @@ local TYPE_DEFS = {
           season = {
             defaultName = "Midnight S1",
             defaultColor = UIOptions:CopyColour(DEFAULT_TYPE_COLORS.season),
-            defaultPriority = 5,
+            defaultPriority = DEFAULT_PRIORITY,
+            defaultSectionOrder = DEFAULT_SECTION_ORDERS.season,
             order = 1,
             treeName = "Season 1",
             includeInSeason = false,
@@ -91,7 +102,8 @@ local TYPE_DEFS = {
             defaultName = "Midnight S1: Adventurer",
             query = MDS1Adv,
             defaultColor = UIOptions:CopyColour(DEFAULT_TYPE_COLORS.adv),
-            defaultPriority = 10,
+            defaultPriority = DEFAULT_PRIORITY,
+            defaultSectionOrder = DEFAULT_SECTION_ORDERS.adv,
             order = 3,
             treeName = "Adventurer",
             includeInSeason = true,
@@ -100,7 +112,8 @@ local TYPE_DEFS = {
             defaultName = "Midnight S1: Veteran",
             query = MDS1Vet,
             defaultColor = UIOptions:CopyColour(DEFAULT_TYPE_COLORS.vet),
-            defaultPriority = 9,
+            defaultPriority = DEFAULT_PRIORITY,
+            defaultSectionOrder = DEFAULT_SECTION_ORDERS.vet,
             order = 4,
             treeName = "Veteran",
             includeInSeason = true,
@@ -109,7 +122,8 @@ local TYPE_DEFS = {
             defaultName = "Midnight S1: Champion",
             query = MDS1Champ,
             defaultColor = UIOptions:CopyColour(DEFAULT_TYPE_COLORS.champ),
-            defaultPriority = 8,
+            defaultPriority = DEFAULT_PRIORITY,
+            defaultSectionOrder = DEFAULT_SECTION_ORDERS.champ,
             order = 5,
             treeName = "Champion",
             includeInSeason = true,
@@ -118,7 +132,8 @@ local TYPE_DEFS = {
             defaultName = "Midnight S1: Hero",
             query = MDS1Hero,
             defaultColor = UIOptions:CopyColour(DEFAULT_TYPE_COLORS.hero),
-            defaultPriority = 7,
+            defaultPriority = DEFAULT_PRIORITY,
+            defaultSectionOrder = DEFAULT_SECTION_ORDERS.hero,
             order = 6,
             treeName = "Hero",
             includeInSeason = true,
@@ -127,7 +142,8 @@ local TYPE_DEFS = {
             defaultName = "Midnight S1: Myth",
             query = MDS1Myth,
             defaultColor = UIOptions:CopyColour(DEFAULT_TYPE_COLORS.myth),
-            defaultPriority = 6,
+            defaultPriority = DEFAULT_PRIORITY,
+            defaultSectionOrder = DEFAULT_SECTION_ORDERS.myth,
             order = 7,
             treeName = "Myth",
             includeInSeason = true,
@@ -145,7 +161,8 @@ local TYPE_DEFS = {
           defaultName = "Midnight Crafted",
           query = MDCrafted,
           defaultColor = UIOptions:CopyColour(DEFAULT_TYPE_COLORS.crafted),
-          defaultPriority = 11,
+          defaultPriority = DEFAULT_PRIORITY,
+          defaultSectionOrder = DEFAULT_SECTION_ORDERS.crafted,
           order = 1,
           treeName = "Crafted",
           includeInSeason = false,
@@ -154,7 +171,8 @@ local TYPE_DEFS = {
           defaultName = "Midnight S1: Crafted",
           query = MDS1Crafted,
           defaultColor = UIOptions:CopyColour(DEFAULT_TYPE_COLORS.s1craft),
-          defaultPriority = 12,
+          defaultPriority = DEFAULT_PRIORITY,
+          defaultSectionOrder = DEFAULT_SECTION_ORDERS.s1craft,
           order = 2,
           treeName = "S1 Crafted",
           includeInSeason = false,
@@ -177,12 +195,14 @@ local function CreateCategoryDefaults(def)
     plainActiveName = nil,
     activeColor = nil,
     activePriority = nil,
+    activeOrder = nil,
     activeIncludeBoe = nil,
     activeIncludeBow = nil,
 
     pendingName = def.defaultName,
     pendingColor = UIOptions:CopyColour(def.defaultColor),
     pendingPriority = def.defaultPriority,
+    pendingOrder = def.defaultSectionOrder,
     pendingIncludeBoe = false,
     pendingIncludeBow = false,
   }
@@ -204,6 +224,11 @@ end
 
 local defaults = {
   profile = {
+    settings = {
+      enforceOrderOnCreate = true,
+      enforceOrderAlways = false,
+    },
+
     expansions = {
       [EXPANSION_MIDNIGHT] = {
         seasons = {

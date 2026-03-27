@@ -11,15 +11,21 @@ local AceConfigDialog = BBTC.AceConfigDialog
 
 local GetTypeDef = BBTC.GetTypeDef
 local GetState = BBTC.GetState
+local GetSettings = BBTC.GetSettings
 local GetPendingColor = BBTC.GetPendingColor
 local GetPendingPriority = BBTC.GetPendingPriority
+local GetPendingOrder = BBTC.GetPendingOrder
+local GetMaxManagedOrder = BBTC.GetMaxManagedOrder
 local ToggleCategory = BBTC.ToggleCategory
 local ActivateCategory = BBTC.ActivateCategory
+local ApplyPendingOrder = BBTC.ApplyPendingOrder
 local ResetPendingName = BBTC.ResetPendingName
 local ResetPendingColor = BBTC.ResetPendingColor
 local NotifyConfigChanged = BBTC.NotifyConfigChanged
 local GetStatusText = BBTC.GetStatusText
 local SetPinnedEnabled = BBTC.SetPinnedEnabled
+local SetEnforceOrderOnCreate = BBTC.SetEnforceOrderOnCreate
+local SetEnforceOrderAlways = BBTC.SetEnforceOrderAlways
 
 local function OpenConfigWindow()
   AceConfigDialog:Open("BBGT_Window")
@@ -52,7 +58,7 @@ local function MakeTypeGroup(key, order)
         type = "toggle",
         name = "Pinned",
         desc = "Keep this category in BetterBags' pinned section.",
-        order = 1.5,
+        order = 1.1,
         get = function()
           return GetState(key).pinned
         end,
@@ -64,26 +70,71 @@ local function MakeTypeGroup(key, order)
         type = "toggle",
         name = "Include BoE (can be BoW)",
         desc = "Include Bind on Equip items in this category.",
-        order = 1.6,
+        order = 1.2,
         get = function()
           return not not GetState(key).pendingIncludeBoe
         end,
         set = function(_, value)
           BBTC.SetIncludeBoeEnabled(key, value)
-        end
+        end,
       },
       includeBow = {
         type = "toggle",
         name = "Include BoW",
         desc = "Include Warbound and Warbound until Equipped items in this category.",
-        order = 1.7,
+        order = 1.3,
         get = function()
           return not not GetState(key).pendingIncludeBow
         end,
         set = function(_, value)
           BBTC.SetIncludeBowEnabled(key, value)
-        end
+        end,
       },
+
+      orderSpacer = {
+        type = "description",
+        name = "",
+        order = 1.35,
+        width = "full",
+      },
+      pendingOrder = {
+        type = "input",
+        name = "Pinned Order",
+        width = 0.8,
+        order = 1.4,
+        disabled = function()
+          return not GetState(key).pinned
+        end,
+        get = function()
+          return tostring(GetPendingOrder(key))
+        end,
+        set = function(_, value)
+          local state = GetState(key)
+          state.pendingOrder = value
+          NotifyConfigChanged()
+        end,
+      },
+      applyOrder = {
+        type = "execute",
+        name = "Apply Order",
+        width = 1.2,
+        order = 1.5,
+        disabled = function()
+          return not GetState(key).pinned
+        end,
+        func = function()
+          ApplyPendingOrder(key)
+        end,
+      },
+      orderHelp = {
+        type = "description",
+        name = function()
+          return "Lower number = higher in pinned list. Range: 1-" .. tostring(GetMaxManagedOrder())
+        end,
+        order = 1.6,
+        width = "full",
+      },
+
       pendingName = {
         type = "input",
         name = "Name",
@@ -101,16 +152,31 @@ local function MakeTypeGroup(key, order)
       },
       activate = {
         type = "execute",
-        name = "Apply Changes",
+        name = "Apply New Text",
+        width = 1.2,
         order = 3,
         func = function()
           ActivateCategory(key)
+        end,
+      },
+      resetText = {
+        type = "execute",
+        name = "Reset Text",
+        width = 1.2,
+        order = 3.1,
+        func = function()
+          local wasActive = GetState(key).active
+          ResetPendingName(key)
+          if wasActive then
+            ActivateCategory(key)
+          end
         end,
       },
       textColor = {
         type = "color",
         name = "Text Color",
         hasAlpha = false,
+        width = "full",
         order = 4,
         get = function()
           local color = GetPendingColor(key)
@@ -169,18 +235,6 @@ local function MakeTypeGroup(key, order)
         order = 6.5,
         width = "full",
       },
-      resetText = {
-        type = "execute",
-        name = "Reset Text",
-        order = 7,
-        func = function()
-          local wasActive = GetState(key).active
-          ResetPendingName(key)
-          if wasActive then
-            ActivateCategory(key)
-          end
-        end,
-      },
       resetColor = {
         type = "execute",
         name = "Reset Color",
@@ -209,6 +263,17 @@ local function MakeTypeGroup(key, order)
         end,
         order = 10,
       },
+      currentOrder = {
+        type = "description",
+        name = function()
+          local state = GetState(key)
+          if state.active and state.activeOrder then
+            return "Current active pinned order: " .. tostring(state.activeOrder)
+          end
+          return "Current active pinned order: (not active)"
+        end,
+        order = 10.1,
+      },
       status = {
         type = "description",
         name = function()
@@ -222,9 +287,55 @@ end
 
 local windowOptions = {
   type = "group",
-  name = "BetterBags_GearCategories",
+  name = "BetterBags - Gear Categories",
   childGroups = "tree",
   args = {
+    overview = {
+      type = "group",
+      name = "Main",
+      order = 0,
+      inline = false,
+      args = {
+        orderingHeader = {
+          type = "header",
+          name = "Ordering",
+          order = 1,
+        },
+        enforceOrderOnCreate = {
+          type = "toggle",
+          name = "Enforce order at creation/update",
+          desc = "When a managed pinned category is created or updated, write its pinned order into BetterBags.",
+          order = 2,
+          width = "full",
+          get = function()
+            return GetSettings().enforceOrderOnCreate
+          end,
+          set = function(_, value)
+            SetEnforceOrderOnCreate(value)
+          end,
+        },
+        enforceOrderAlways = {
+          type = "toggle",
+          name = "Enforce order permanently",
+          desc = "Keep reapplying the managed pinned order when categories change.",
+          order = 3,
+          width = "full",
+          get = function()
+            return GetSettings().enforceOrderAlways
+          end,
+          set = function(_, value)
+            SetEnforceOrderAlways(value)
+          end,
+        },
+        orderingInfo = {
+          type = "description",
+          name = "Default managed order: Myth=1, Hero=2, Champion=3, Veteran=4, Adventurer=5, Season 1=6, S1 Crafted=7, Crafted=8.",
+          order = 4,
+          width = "full",
+        },
+      },
+    },
+
     midnight = {
       type = "group",
       name = "Midnight",
