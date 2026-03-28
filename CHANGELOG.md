@@ -25,6 +25,10 @@
 - Per-category text colour customisation
 - Per-category BetterBags priority control
 - Per-category pinning support for BetterBags pinned sections
+- Per-category pinned-order input with apply button
+- Main config toggles for:
+  - Enforce order at creation/update
+  - Enforce order permanently
 - Apply and reset actions for pending category changes
 
 ---
@@ -51,3 +55,21 @@
 - Saved variable support through BBGT_DB
 - Legacy saved-variable migration into the current expansion/season structure
 - Pinning support for both backpack and bank custom section sort data
+- Managed pinned-section ordering support for both backpack and bank
+- Persistent category order storage in the database
+- Default managed order values:
+  - Myth = 1
+  - Hero = 2
+  - Champion = 3
+  - Veteran = 4
+  - Adventurer = 5
+  - Season 1 = 6
+  - S1 Crafted = 7
+  - Crafted = 8
+
+### Changed
+- All categories now default to BetterBags priority `5`
+- Priority is documented as category match priority, not pinned display order
+- Category display order is now controlled through pinned-section order values instead of BetterBags priority
+- Pinned-order controls are disabled when a category is not pinned
+- Ordering can optionally be enforced only on creation/update or continuously while the addon is running
