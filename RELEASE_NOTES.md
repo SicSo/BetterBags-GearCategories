@@ -1,8 +1,3 @@
-## Unreleased
-
----
-
-
 ## Version 0.1.0 - [28-03-2026]
 
 ### Added
@@ -80,6 +75,3 @@
 - Ordering can optionally be enforced only on creation/update or continuously while the addon is running
 
 ---
-
-
-## Start of Development
