@@ -3,7 +3,7 @@
 ## Title: BetterBags - Gear Categories
 ## Notes: Adds categories for classifing gear by tracks or season to BetterBags.
 ## Author: Sicso
-## Version: 0.1.0
+## Version: 0.2.0
 ## IconTexture: Interface/AddOns/BetterBags-GearCategories/gfx/icon.tga
 ## X-Website: https://github.com/SicSo/BetterBags-GearCategories
 ## SavedVariables: BBGT_DB
