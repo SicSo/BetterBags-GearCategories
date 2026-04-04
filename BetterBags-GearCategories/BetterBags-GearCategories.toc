@@ -16,4 +16,4 @@
 
 Core.lua
 Backend/Init.xml
-UI.lua
+UserInterface/Init.xml

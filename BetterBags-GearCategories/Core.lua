@@ -1,5 +1,3 @@
--- Core.lua
-
 BBTC = BBTC or {}
 
 BBTC.UIOptions = BBTC.UIOptions or {}

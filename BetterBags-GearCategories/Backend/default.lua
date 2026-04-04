@@ -227,6 +227,7 @@ local defaults = {
     settings = {
       enforceOrderOnCreate = true,
       enforceOrderAlways = false,
+      popupVersion = 0,
     },
 
     expansions = {

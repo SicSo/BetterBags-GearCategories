@@ -9,8 +9,9 @@ This page showcases screenshots included with the addon.
 | File | Preview |
 |---|---|
 | MainMenu.png | ![MainMenu](./images/MainMenu.png) |
-| MainWindowClosed.png | ![MainWindowClosed](./images/MainWindowClosed.png) |
-| MainWindowOpen.png | ![MainWindowOpen](./images/MainWindowOpen.png) |
+| MainWindow.png | ![MainWindow](./images/MainWindow.png) |
+| MidnightWindow.png | ![MidnightWindow](./images/MidnightWindow.png) |
+| CurrentSeasonQuickPopup.png | ![CurrentSeasonQuickPopup](./images/CurrentSeasonQuickPopup.png) |
 
 
 ---
@@ -29,7 +30,8 @@ This page showcases screenshots included with the addon.
 
 | File | Preview |
 |---|---|
-| WindowHero.png | ![WindowHero](./images/WindowHero.png) |
-| WindowVeteran.png | ![WindowVeteran](./images/WindowVeteran.png) |
+| CraftedWindow.png | ![CraftedWindow](./images/CraftedWindow.png) |
+| HeroWindow.png | ![HeroWindow](./images/HeroWindow.png) |
+| VeteranWindow.png | ![VeteranWindow](./images/VeteranWindow.png) |
 
 ---

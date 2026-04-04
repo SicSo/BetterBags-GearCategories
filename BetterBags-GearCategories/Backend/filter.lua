@@ -1,5 +1,3 @@
--- filter.lua
-
 BBTC = BBTC or {}
 
 local function IsTrue(value)

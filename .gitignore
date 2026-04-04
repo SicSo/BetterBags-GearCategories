@@ -39,7 +39,7 @@ luac.out
 *.x86_64
 *.hex
 
-Credits.md
-FEATURES.md
-
 /.vscode/
+
+/images/OldImages/
+/BetterBags-GearCategories/UserInterface/UI_Old.lua
